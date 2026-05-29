@@ -1,0 +1,2 @@
+"""Synthetic participant simulation backend."""
+

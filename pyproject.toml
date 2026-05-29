@@ -1,0 +1,13 @@
+[project]
+name = "ai-simulation"
+version = "0.1.0"
+description = "Backend for synthetic young-adult participant simulations."
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
