@@ -8,8 +8,10 @@ Backend for synthetic young-adult research participants. Researchers call the AP
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+That binds the API to all network interfaces on the server, so people outside the machine can reach it at `http://SERVER_IP:8000` as long as the server firewall and cloud security rules allow that port.
 
 By default the service uses `SIM_PROVIDER=mock`, which is deterministic and useful for development tests only.
 
@@ -19,7 +21,7 @@ For real runs, use a self-hosted local LLM backend: Ollama or vLLM. The model ca
 $env:SIM_PROVIDER="ollama"
 $env:OLLAMA_BASE_URL="http://YOUR_LINUX_SERVER:11434"
 $env:OLLAMA_MODEL="llama3.1"
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Or with a vLLM OpenAI-compatible server:
@@ -29,7 +31,7 @@ $env:SIM_PROVIDER="vllm"
 $env:VLLM_BASE_URL="http://YOUR_LINUX_SERVER:8001"
 $env:VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct"
 $env:VLLM_API_KEY="EMPTY"
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 If the Linux server is reachable only through SSH, forward it locally and keep the backend URL on `127.0.0.1`:
@@ -39,6 +41,69 @@ ssh -L 11434:127.0.0.1:11434 user@YOUR_LINUX_SERVER
 $env:SIM_PROVIDER="ollama"
 $env:OLLAMA_BASE_URL="http://127.0.0.1:11434"
 ```
+
+## Expose the API Through Nginx
+
+This repo includes a host-side Nginx config at `nginx/default.conf` that proxies public traffic on port `80` to the local FastAPI server on `127.0.0.1:8000`.
+
+Run the API on localhost:
+
+```powershell
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Copy the Nginx config into place on the server:
+
+```bash
+sudo cp nginx/default.conf /etc/nginx/conf.d/simulated-young-adults.conf
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+On Ubuntu, the packaged default site is usually enabled on port `80` and will return its own 404 unless you disable it. Removing `/etc/nginx/sites-enabled/default` lets this project config become the active server for `http://SERVER_IP/health`.
+
+With that setup, external users can reach:
+
+- `http://SERVER_IP/health`
+- `http://SERVER_IP/v1/experiment-setups`
+- `http://SERVER_IP/docs`
+
+If port `80` is already in use or blocked, change the `listen` port in `nginx/default.conf` and open that port in the server firewall or cloud security group.
+
+## Run Everything With Docker Compose
+
+This is the simplest option if you want Ollama, the FastAPI backend, and Nginx handled together.
+
+1. Start the stack:
+
+```bash
+docker compose up --build -d
+```
+
+2. Check status:
+
+```bash
+docker compose ps
+```
+
+3. Pull an Ollama model into the Ollama container:
+
+```bash
+docker compose exec ollama ollama pull llama3.1
+```
+
+The Ollama service requests all available NVIDIA GPUs from Docker. That requires the host to have the NVIDIA driver and the Docker NVIDIA container toolkit installed.
+
+4. Open the app:
+
+```text
+http://SERVER_IP/
+http://SERVER_IP/health
+http://SERVER_IP/v1/experiment-setups
+```
+
+The public entrypoint is Nginx on port `80`. It proxies `/health`, `/v1/*`, and the docs pages to the backend container, and the backend container talks to Ollama over the internal Docker network.
 
 Provider traces are stored on every turn. A real Ollama run stores `provider_trace.provider = "ollama"`; a real vLLM run stores `provider_trace.provider = "vllm"`.
 
@@ -145,7 +210,7 @@ POST /v1/sessions
 }
 ```
 
-Send a turn:
+Send one question at a time to the same session:
 
 ```http
 POST /v1/sessions/{session_id}/turns
@@ -169,6 +234,28 @@ POST /v1/sessions/{session_id}/turns
   "capture_thinking": true
 }
 ```
+
+Repeat that request once per question. The same `session_id` keeps the same persona, so the researcher can collect a full interview or survey in sequence without resampling.
+
+When the conversation is finished, submit demographics through a separate endpoint:
+
+```http
+POST /v1/sessions/{session_id}/demographics
+```
+
+```json
+{
+  "demographics": {
+    "age": 24,
+    "gender": "female",
+    "country": "US",
+    "education": "bachelors_degree",
+    "student_status": "undergraduate"
+  }
+}
+```
+
+That endpoint stores the demographics separately from the turn history and returns the session id, the synthetic persona, and the saved demographics.
 
 Single-turn convenience endpoint:
 

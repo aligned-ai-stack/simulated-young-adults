@@ -7,7 +7,7 @@ from typing import Any
 
 from app.config import Settings
 from app.llm import ModelResult
-from app.schemas import CreateSessionRequest, StudySpec, TurnRequest
+from app.schemas import CreateSessionRequest, SessionDemographicsRequest, StudySpec, TurnRequest
 from app.service import SimulationService
 from app.storage import SimulationStore
 
@@ -305,6 +305,37 @@ class ServiceResetTests(unittest.TestCase):
         event_types = [trace["event_type"] for trace in traces]
         self.assertIn("session_created", event_types)
         self.assertIn("turn_completed", event_types)
+
+    def test_session_demographics_are_stored_separately_from_turns(self) -> None:
+        service, _ = self.build_service()
+        session = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(name="Demographics study"),
+                random_seed=321,
+            )
+        )
+
+        response = service.record_session_demographics(
+            session["session_id"],
+            SessionDemographicsRequest(
+                demographics={
+                    "age": 22,
+                    "gender": "female",
+                    "country": "US",
+                    "education": "bachelors_degree",
+                }
+            ),
+        )
+
+        self.assertEqual(response["session_id"], session["session_id"])
+        self.assertEqual(response["demographics"]["age"], 22)
+
+        stored = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["demographics"]["country"], "US")
+
+        traces = service.list_session_traces(session["session_id"])
+        self.assertEqual(traces[-1]["event_type"], "session_demographics_recorded")
 
 
 if __name__ == "__main__":

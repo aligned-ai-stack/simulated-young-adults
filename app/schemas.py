@@ -27,6 +27,7 @@ class SessionResponse(BaseModel):
     persona_pool_id: str | None = None
     persona_pool_member_id: str | None = None
     persona: dict[str, Any]
+    demographics: dict[str, Any] = Field(default_factory=dict)
     seed: int
 
 
@@ -67,6 +68,17 @@ class SingleTurnRequest(CreateSessionRequest):
     trial_index: int | None = None
     response_mode: Literal["survey", "interview", "chat", "experiment"] = "survey"
     capture_thinking: bool = True
+
+
+class SessionDemographicsRequest(BaseModel):
+    demographics: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionDemographicsResponse(BaseModel):
+    session_id: str
+    synthetic: bool = True
+    persona: dict[str, Any]
+    demographics: dict[str, Any]
 
 
 class ExperimentSetupResponse(BaseModel):

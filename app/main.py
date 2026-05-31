@@ -11,6 +11,8 @@ from app.schemas import (
     ExperimentSetupResponse,
     PersonaPoolRequest,
     PersonaPoolResponse,
+    SessionDemographicsRequest,
+    SessionDemographicsResponse,
     SessionResponse,
     SingleTurnResponse,
     SingleTurnRequest,
@@ -73,6 +75,20 @@ def create_session(request: CreateSessionRequest) -> dict:
         return service.create_session(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/sessions/{session_id}/demographics",
+    response_model=SessionDemographicsResponse,
+)
+def record_session_demographics(
+    session_id: str,
+    request: SessionDemographicsRequest,
+) -> dict:
+    try:
+        return service.record_session_demographics(session_id, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
 
 
 @app.post("/v1/sessions/{session_id}/turns", response_model=TurnResponse)

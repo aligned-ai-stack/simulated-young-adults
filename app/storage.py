@@ -38,6 +38,7 @@ class SimulationStore:
                     criteria_json TEXT NOT NULL,
                     conditioned_json TEXT NOT NULL,
                     persona_json TEXT NOT NULL,
+                    demographics_json TEXT NOT NULL DEFAULT '{}',
                     seed INTEGER NOT NULL,
                     provider TEXT NOT NULL
                 )
@@ -46,6 +47,7 @@ class SimulationStore:
             self._ensure_session_column(conn, "experiment_setup_id", "TEXT")
             self._ensure_session_column(conn, "persona_pool_id", "TEXT")
             self._ensure_session_column(conn, "persona_pool_member_id", "TEXT")
+            self._ensure_session_column(conn, "demographics_json", "TEXT NOT NULL DEFAULT '{}'" )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS turns (
@@ -169,9 +171,10 @@ class SimulationStore:
                 """
                 INSERT INTO sessions (
                     id, experiment_setup_id, persona_pool_id, persona_pool_member_id,
-                    study_json, criteria_json, conditioned_json, persona_json, seed, provider
+                    study_json, criteria_json, conditioned_json, persona_json,
+                    demographics_json, seed, provider
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -182,6 +185,7 @@ class SimulationStore:
                     json.dumps(criteria),
                     json.dumps(conditioned_attributes),
                     json.dumps(persona),
+                    json.dumps({}),
                     seed,
                     provider,
                 ),
@@ -205,6 +209,7 @@ class SimulationStore:
             "criteria": json.loads(row["criteria_json"]),
             "conditioned_attributes": json.loads(row["conditioned_json"]),
             "persona": json.loads(row["persona_json"]),
+            "demographics": json.loads(row["demographics_json"]),
             "seed": row["seed"],
             "provider": row["provider"],
         }
@@ -365,6 +370,22 @@ class SimulationStore:
                 WHERE id = ?
                 """,
                 (json.dumps(persona), seed, persona_pool_member_id, session_id),
+            )
+
+    def update_session_demographics(
+        self,
+        *,
+        session_id: str,
+        demographics: dict[str, Any],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET demographics_json = ?
+                WHERE id = ?
+                """,
+                (json.dumps(demographics, sort_keys=True), session_id),
             )
 
     def create_persona_pool(

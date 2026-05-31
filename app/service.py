@@ -8,7 +8,13 @@ from app.experiments import get_experiment_setup, merge_setup_criteria, study_fr
 from app.llm import LLMProvider
 from app.persona import PersonaSampler
 from app.prompting import build_system_prompt, history_to_messages
-from app.schemas import CreateSessionRequest, PersonaPoolRequest, SingleTurnRequest, TurnRequest
+from app.schemas import (
+    CreateSessionRequest,
+    PersonaPoolRequest,
+    SessionDemographicsRequest,
+    SingleTurnRequest,
+    TurnRequest,
+)
 from app.storage import SimulationStore
 
 
@@ -92,6 +98,7 @@ class SimulationService:
             "persona_pool_id": persona_pool_id,
             "persona_pool_member_id": persona_pool_member_id,
             "persona": persona,
+            "demographics": {},
             "seed": seed,
         }
 
@@ -345,6 +352,33 @@ class SimulationService:
         if self.store.get_session(session_id) is None:
             raise KeyError(session_id)
         return self.store.list_trace_events(session_id)
+
+    def record_session_demographics(
+        self,
+        session_id: str,
+        request: SessionDemographicsRequest,
+    ) -> dict:
+        session = self.store.get_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+
+        demographics = request.demographics
+        self.store.update_session_demographics(
+            session_id=session_id,
+            demographics=demographics,
+        )
+        self.store.add_trace_event(
+            session_id=session_id,
+            turn_id=None,
+            event_type="session_demographics_recorded",
+            event={"demographics": demographics},
+        )
+        return {
+            "session_id": session_id,
+            "synthetic": True,
+            "persona": session["persona"],
+            "demographics": demographics,
+        }
 
     def _next_reset_seed(self, current_seed: int) -> int:
         return (current_seed * 1103515245 + 12345) % (2**31)
