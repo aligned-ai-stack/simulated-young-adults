@@ -26,7 +26,6 @@ class PersonaListRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=500)
     criteria: dict[str, Any] = Field(default_factory=dict)
     conditioned_attributes: dict[str, Any] = Field(default_factory=dict)
-    include_causal_policy: bool = True
     compact: bool = False
 
 
@@ -34,9 +33,6 @@ class PersonaListResponse(BaseModel):
     synthetic: bool = True
     experiment_setup_id: str | None = None
     count: int
-    criteria: dict[str, Any]
-    conditioned_attributes: dict[str, Any]
-    causal_policy: dict[str, Any] | None = None
     personas: list[dict[str, Any]]
 
 
@@ -100,13 +96,8 @@ class ExperimentSetupResponse(BaseModel):
     name: str
     description: str
     default_criteria: dict[str, Any]
-    source_label_visibility: str
     statement_count_per_run: int
     response_questions: list[str]
-    independent_variables: list[str]
-    dependent_variables: list[str]
-    confounds_to_sample: list[str]
-    causal_policy: dict[str, Any] = Field(default_factory=dict)
 
 
 class PersonaPoolRequest(BaseModel):
@@ -120,9 +111,6 @@ class PersonaPoolResponse(BaseModel):
     persona_pool_id: str
     experiment_setup_id: str
     size: int
-    seed: int
-    criteria: dict[str, Any]
-    conditioned_attributes: dict[str, Any]
 
 
 class StoredTurnResponse(BaseModel):

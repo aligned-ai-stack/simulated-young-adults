@@ -107,7 +107,9 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body["experiment_setup_id"], "cognitive_load_high_load")
         self.assertEqual(body["count"], 100)
         self.assertEqual(len(body["personas"]), 100)
-        self.assertIn("causal_policy", body)
+        self.assertNotIn("criteria", body)
+        self.assertNotIn("conditioned_attributes", body)
+        self.assertNotIn("causal_policy", body)
         self.assertIn("resilience_under_distraction", body["personas"][0])
         self.assertNotIn("street_address", body["personas"][0])
 

@@ -38,11 +38,7 @@ Current setup ids:
 | `sycophancy_neutral` | `sycophancy.pdf` | Neutral LLM condition |
 | `sycophancy_sycophantic` | `sycophancy.pdf` | Sycophantic LLM condition |
 
-Each setup has its own persona pool. The API also returns a `causal_policy` with:
-
-- `sample_or_control`: pre-treatment attributes suitable for screening, balancing, or conditioning
-- `do_not_condition_on`: outcomes, mediators, or colliders that should not drive persona generation
-- `rationale`: short causal reasoning
+Each setup has its own internal causal policy and persona-generation rules. Those details are used by the backend but are not returned in public API responses.
 
 ## 2. Generate Personas
 
@@ -67,8 +63,7 @@ Request:
   },
   "criteria": {
     "age": {"min": 18, "max": 25}
-  },
-  "conditioned_attributes": {}
+  }
 }
 ```
 
@@ -79,13 +74,6 @@ Response:
   "synthetic": true,
   "experiment_setup_id": "cognitive_load_high_load",
   "count": 100,
-  "criteria": {"age": {"min": 18, "max": 25}},
-  "conditioned_attributes": {},
-  "causal_policy": {
-    "target_population": "young adults aged 18-25",
-    "sample_or_control": ["age", "ai_literacy", "education"],
-    "do_not_condition_on": ["accuracy", "confidence", "sharing_likelihood"]
-  },
   "personas": [
     {
       "persona_id": "persona_...",
@@ -120,8 +108,7 @@ Each session gets one fixed persona. Use the same `session_id` for all turns fro
   },
   "criteria": {
     "age": {"min": 18, "max": 25}
-  },
-  "conditioned_attributes": {}
+  }
 }
 ```
 
@@ -212,8 +199,7 @@ Create a session:
     "description": "Participants judge statement truthfulness and trustworthiness.",
     "instructions": "Answer each item using the requested JSON fields."
   },
-  "criteria": {"age": {"min": 18, "max": 25}},
-  "conditioned_attributes": {}
+  "criteria": {"age": {"min": 18, "max": 25}}
 }
 ```
 
@@ -504,6 +490,4 @@ Each stored turn includes the original request payload, stimulus, metadata, exac
 
 ## Causal Sampling Rule
 
-Researchers should condition only on pre-treatment fields in `causal_policy.sample_or_control`.
-
-Do not condition persona generation on fields listed in `causal_policy.do_not_condition_on`, because those are outcomes, mediators, or colliders. Examples include post-interaction trust, opinion change, accuracy, confidence after a stimulus, and manipulation-check scores.
+The backend uses internal causal policies to sample study-appropriate pre-treatment persona attributes and avoid conditioning persona generation on outcomes, mediators, or colliders. These internal policies are not exposed in public API responses.

@@ -25,13 +25,8 @@ class ExperimentSetup:
             "name": self.name,
             "description": self.description,
             "default_criteria": deepcopy(self.default_criteria),
-            "source_label_visibility": self.source_label_visibility,
             "statement_count_per_run": self.statement_count_per_run,
             "response_questions": list(self.response_questions),
-            "independent_variables": list(self.independent_variables),
-            "dependent_variables": list(self.dependent_variables),
-            "confounds_to_sample": list(self.confounds_to_sample),
-            "causal_policy": deepcopy(self.causal_policy),
         }
 
 

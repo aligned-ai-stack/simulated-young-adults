@@ -106,12 +106,9 @@ class SimulationService:
     def generate_personas(self, request: PersonaListRequest) -> dict:
         setup = None
         criteria = request.criteria
-        causal_policy = None
         if request.experiment_setup_id:
             setup = get_experiment_setup(request.experiment_setup_id)
             criteria = merge_setup_criteria(setup.default_criteria, request.criteria)
-            if request.include_causal_policy:
-                causal_policy = setup.causal_policy
 
         personas = []
         for _ in range(request.count):
@@ -128,9 +125,6 @@ class SimulationService:
             "synthetic": True,
             "experiment_setup_id": request.experiment_setup_id,
             "count": len(personas),
-            "criteria": criteria,
-            "conditioned_attributes": request.conditioned_attributes,
-            "causal_policy": causal_policy,
             "personas": personas,
         }
 

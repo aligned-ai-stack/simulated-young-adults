@@ -340,7 +340,7 @@ class ServiceResetTests(unittest.TestCase):
         traces = service.list_session_traces(session["session_id"])
         self.assertEqual(traces[-1]["event_type"], "session_demographics_recorded")
 
-    def test_sycophancy_conditions_have_separate_pools_and_causal_policy(self) -> None:
+    def test_sycophancy_conditions_have_separate_pools(self) -> None:
         service, _ = self.build_service()
 
         neutral = service.create_session(
@@ -367,11 +367,7 @@ class ServiceResetTests(unittest.TestCase):
 
         export = service.export_session(sycophantic["session_id"])
         self.assertEqual(export["experiment_setup"]["id"], "sycophancy_sycophantic")
-        self.assertIn("causal_policy", export["experiment_setup"])
-        self.assertIn(
-            "opinion_change",
-            export["experiment_setup"]["causal_policy"]["do_not_condition_on"],
-        )
+        self.assertNotIn("causal_policy", export["experiment_setup"])
 
     def test_session_export_includes_persona_demographics_turns_and_traces(self) -> None:
         service, _ = self.build_service()
