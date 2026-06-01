@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import sys
 import unittest
 
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed")
 class ApiTests(unittest.TestCase):
-    def test_single_turn_response_includes_audit_fields(self) -> None:
-        from fastapi.testclient import TestClient
+    def build_client(self):
+        os.environ["SIM_PROVIDER"] = "mock"
+        sys.modules.pop("app.main", None)
 
+        from fastapi.testclient import TestClient
         from app.main import app
 
-        client = TestClient(app)
+        return TestClient(app)
+
+    def test_single_turn_response_includes_audit_fields(self) -> None:
+        client = self.build_client()
         response = client.post(
             "/v1/respond",
             json={
@@ -29,10 +36,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["synthetic"])
-        self.assertEqual(body["seed"], 11)
+        self.assertNotIn("seed", body)
         self.assertEqual(body["reset_policy"], "carryover")
         self.assertIn("session_id", body)
-        self.assertIn("persona", body)
+        self.assertNotIn("persona", body)
+        self.assertNotIn("persona_pool_id", body)
+        self.assertNotIn("persona_pool_member_id", body)
+        self.assertNotIn("seed", body)
         self.assertIn("response", body)
         self.assertIn("qualitative_thinking", body)
 
@@ -48,11 +58,7 @@ class ApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(traces.json()), 2)
 
     def test_session_demographics_endpoint_persists_payload(self) -> None:
-        from fastapi.testclient import TestClient
-
-        from app.main import app
-
-        client = TestClient(app)
+        client = self.build_client()
         session = client.post(
             "/v1/sessions",
             json={
@@ -79,6 +85,42 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body["session_id"], session_id)
         self.assertEqual(body["demographics"]["country"], "CA")
         self.assertIn("persona", body)
+
+    def test_persona_endpoint_returns_requested_count_and_setup_policy(self) -> None:
+        client = self.build_client()
+        response = client.post(
+            "/v1/personas",
+            json={
+                "experiment_setup_id": "cognitive_load_high_load",
+                "count": 100,
+                "compact": True,
+                "study": {
+                    "name": "Cognitive load misinformation task",
+                    "description": "Generate personas for a high-load study.",
+                },
+                "criteria": {"age": {"min": 18, "max": 25}},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["experiment_setup_id"], "cognitive_load_high_load")
+        self.assertEqual(body["count"], 100)
+        self.assertEqual(len(body["personas"]), 100)
+        self.assertIn("causal_policy", body)
+        self.assertIn("resilience_under_distraction", body["personas"][0])
+        self.assertNotIn("street_address", body["personas"][0])
+
+    def test_new_image_text_setup_is_available(self) -> None:
+        client = self.build_client()
+        response = client.get("/v1/experiment-setups")
+
+        self.assertEqual(response.status_code, 200)
+        setup_ids = {setup["id"] for setup in response.json()}
+        self.assertIn("image_text_ai_generated_intervention", setup_ids)
+        self.assertIn("cognitive_load_no_load", setup_ids)
+        self.assertIn("cognitive_load_low_load", setup_ids)
+        self.assertIn("cognitive_load_high_load", setup_ids)
 
 
 if __name__ == "__main__":

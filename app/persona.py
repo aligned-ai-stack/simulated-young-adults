@@ -244,6 +244,13 @@ MARGINALS: dict[str, list[Any]] = {
     "ai_literacy": [1, 2, 3, 3, 4, 4, 5, 6, 7],
     "ai_literacy_level": ["low", "medium", "medium", "high"],
     "ai_trust": [1, 2, 3, 3, 4, 4, 5, 6, 7],
+    "baseline_trust_in_ai": [1, 2, 3, 3, 4, 4, 5, 6, 7],
+    "ai_familiarity": [1, 2, 3, 4, 4, 5, 6, 7],
+    "ai_skepticism": [1, 2, 3, 4, 4, 5, 6, 7],
+    "openness_to_change": [1, 2, 3, 4, 4, 5, 6, 7],
+    "topic_familiarity": [1, 2, 3, 4, 4, 5, 6, 7],
+    "initial_opinion_strength": [1, 2, 3, 4, 4, 5, 6, 7],
+    "initial_opinion_confidence": [1, 2, 3, 4, 4, 5, 6, 7],
     "prior_ai_use": ["none", "rare", "occasional", "occasional", "frequent"],
     "online_content_skepticism": ["low", "moderate", "moderate", "high"],
     "attention_to_detail": ["low", "medium", "medium", "high"],
@@ -256,6 +263,9 @@ MARGINALS: dict[str, list[Any]] = {
     "knowledge_science_health": [1, 2, 3, 4, 4, 5, 6, 7],
     "knowledge_entertainment_literature": [1, 2, 3, 4, 4, 5, 6, 7],
     "knowledge_technology_internet": [1, 2, 3, 4, 4, 5, 6, 7],
+    "resilience_under_distraction": [1, 2, 3, 4, 4, 5, 6, 7],
+    "cognitive_capacity": [1, 2, 3, 4, 4, 5, 6, 7],
+    "working_memory": [1, 2, 3, 4, 4, 5, 6, 7],
 }
 
 CRITERIA_ALIASES = {

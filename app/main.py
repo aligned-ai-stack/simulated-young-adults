@@ -9,10 +9,13 @@ from app.persona import PersonaSampler
 from app.schemas import (
     CreateSessionRequest,
     ExperimentSetupResponse,
+    PersonaListRequest,
+    PersonaListResponse,
     PersonaPoolRequest,
     PersonaPoolResponse,
     SessionDemographicsRequest,
     SessionDemographicsResponse,
+    SessionExportResponse,
     SessionResponse,
     SingleTurnResponse,
     SingleTurnRequest,
@@ -50,6 +53,14 @@ def health() -> dict[str, str]:
 @app.get("/v1/experiment-setups", response_model=list[ExperimentSetupResponse])
 def experiment_setups() -> list[dict]:
     return list_experiment_setups()
+
+
+@app.post("/v1/personas", response_model=PersonaListResponse)
+def generate_personas(request: PersonaListRequest) -> dict:
+    try:
+        return service.generate_personas(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post(
@@ -113,6 +124,14 @@ def list_turns(session_id: str) -> list[dict]:
 def list_traces(session_id: str) -> list[dict]:
     try:
         return service.list_session_traces(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
+
+
+@app.get("/v1/sessions/{session_id}/export", response_model=SessionExportResponse)
+def export_session(session_id: str) -> dict:
+    try:
+        return service.export_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="session not found") from exc
 

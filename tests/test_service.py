@@ -76,7 +76,9 @@ class ServiceResetTests(unittest.TestCase):
         )
 
         self.assertEqual(response["reset_policy"], "trial")
-        self.assertEqual(response["persona"]["persona_id"], session["persona"]["persona_id"])
+        stored_session = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored_session)
+        self.assertEqual(stored_session["persona"]["persona_id"], session["persona"]["persona_id"])
         self.assertEqual(len(provider.calls[-1]["history"]), 2)
         self.assertIn("only this trial's content is visible", provider.calls[-1]["system_prompt"])
 
@@ -99,7 +101,9 @@ class ServiceResetTests(unittest.TestCase):
         )
 
         self.assertEqual(response["reset_policy"], "full")
-        self.assertNotEqual(response["persona"]["persona_id"], session["persona"]["persona_id"])
+        stored_session = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored_session)
+        self.assertNotEqual(stored_session["persona"]["persona_id"], session["persona"]["persona_id"])
         self.assertEqual(provider.calls[-1]["history"], [])
         self.assertIn("fresh participant reset", provider.calls[-1]["system_prompt"])
 
@@ -176,8 +180,8 @@ class ServiceResetTests(unittest.TestCase):
 
         stored = service.store.get_session(intervention["session_id"])
         self.assertIsNotNone(stored)
-        self.assertIn("pre-intervention text detection", stored["study"]["description"])
-        self.assertIn("intervention_stage_pre_vs_post", stored["study"]["instructions"])
+        self.assertNotIn("pre-intervention text detection", stored["study"]["description"])
+        self.assertNotIn("intervention_stage_pre_vs_post", stored["study"]["instructions"])
 
     def test_third_experiment_conditions_have_separate_pools(self) -> None:
         service, _ = self.build_service()
@@ -216,11 +220,8 @@ class ServiceResetTests(unittest.TestCase):
 
         stored = service.store.get_session(socratic["session_id"])
         self.assertIsNotNone(stored)
-        self.assertIn("Socratic partner", stored["study"]["description"])
-        self.assertIn(
-            "thinking_partner_condition_neutral_vs_steelman_vs_socratic",
-            stored["study"]["instructions"],
-        )
+        self.assertNotIn("Socratic partner", stored["study"]["description"])
+        self.assertNotIn("thinking_partner_condition", stored["study"]["instructions"])
 
     def test_existing_pool_expands_when_larger_size_is_requested(self) -> None:
         service, _ = self.build_service()
@@ -262,9 +263,11 @@ class ServiceResetTests(unittest.TestCase):
             TurnRequest(message="Statement 1", reset_policy="full"),
         )
 
-        self.assertEqual(response["persona_pool_id"], session["persona_pool_id"])
+        stored_session = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored_session)
+        self.assertEqual(stored_session["persona_pool_id"], session["persona_pool_id"])
         self.assertNotEqual(
-            response["persona_pool_member_id"],
+            stored_session["persona_pool_member_id"],
             session["persona_pool_member_id"],
         )
 
@@ -336,6 +339,64 @@ class ServiceResetTests(unittest.TestCase):
 
         traces = service.list_session_traces(session["session_id"])
         self.assertEqual(traces[-1]["event_type"], "session_demographics_recorded")
+
+    def test_sycophancy_conditions_have_separate_pools_and_causal_policy(self) -> None:
+        service, _ = self.build_service()
+
+        neutral = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(),
+                experiment_setup_id="sycophancy_neutral",
+                persona_pool_size=3,
+                random_seed=101,
+            )
+        )
+        sycophantic = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(),
+                experiment_setup_id="sycophancy_sycophantic",
+                persona_pool_size=3,
+                random_seed=101,
+            )
+        )
+
+        self.assertNotEqual(neutral["persona_pool_id"], sycophantic["persona_pool_id"])
+        self.assertIn("baseline_trust_in_ai", neutral["persona"])
+        self.assertIn("ai_familiarity", neutral["persona"])
+        self.assertIn("initial_opinion_confidence", neutral["persona"])
+
+        export = service.export_session(sycophantic["session_id"])
+        self.assertEqual(export["experiment_setup"]["id"], "sycophancy_sycophantic")
+        self.assertIn("causal_policy", export["experiment_setup"])
+        self.assertIn(
+            "opinion_change",
+            export["experiment_setup"]["causal_policy"]["do_not_condition_on"],
+        )
+
+    def test_session_export_includes_persona_demographics_turns_and_traces(self) -> None:
+        service, _ = self.build_service()
+        session = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(name="Export study"),
+                random_seed=222,
+            )
+        )
+        service.record_session_demographics(
+            session["session_id"],
+            SessionDemographicsRequest(demographics={"age": 21, "country": "US"}),
+        )
+        service.respond(
+            session["session_id"],
+            TurnRequest(message="A trial", trial_id="t1", trial_index=1),
+        )
+
+        export = service.export_session(session["session_id"])
+
+        self.assertEqual(export["session"]["id"], session["session_id"])
+        self.assertEqual(export["demographics"]["age"], 21)
+        self.assertEqual(export["persona"]["persona_id"], session["persona"]["persona_id"])
+        self.assertEqual(len(export["turns"]), 1)
+        self.assertGreaterEqual(len(export["traces"]), 3)
 
 
 if __name__ == "__main__":

@@ -125,6 +125,8 @@ The first imported experiment setup from `Experiment setup.pdf` is registered as
 | `climate_thinking_partner_neutral` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
 | `climate_thinking_partner_steelman` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
 | `climate_thinking_partner_socratic` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
+| `sycophancy_neutral` | Not applicable | pre-survey, fixed-turn interaction, post-survey, manipulation check |
+| `sycophancy_sycophantic` | Not applicable | pre-survey, fixed-turn interaction, post-survey, manipulation check |
 
 The second imported experiment setup from `Experimental Setup.pdf` is registered as:
 
@@ -158,6 +160,15 @@ Individual lifestyle changes are a meaningful and necessary part of addressing c
 ```
 
 Each condition has its own persona pool. The intended procedure is pre-study survey, participant opening position, 5 conversation exchanges with the assigned thinking partner, full transcript storage, and post-study survey. The sampled persona fields include age, AI literacy, AI trust, education, openness to new information, general confidence, reasoning style, initial climate-lifestyle view, gender, and nationality.
+
+The sycophancy setup from `sycophancy.pdf` is registered as:
+
+```text
+sycophancy_neutral
+sycophancy_sycophantic
+```
+
+Each condition has its own persona pool. The sampled confounders include baseline trust in AI, AI familiarity, AI skepticism, openness to change, topic familiarity, initial opinion strength, and initial opinion confidence. The public setup metadata includes a `causal_policy` that names which fields are safe to sample/control and which post-treatment outcomes should not be conditioned on.
 
 Each setup gets its own persona pool. The pool key is:
 
@@ -299,9 +310,12 @@ Trace retrieval endpoints:
 ```http
 GET /v1/sessions/{session_id}/turns
 GET /v1/sessions/{session_id}/traces
+GET /v1/sessions/{session_id}/export
 ```
 
 The `qualitative_thinking` field is an explicit self-report rationale for coding, debugging, and later qualitative analysis. It is not hidden model chain-of-thought.
+
+For the researcher-facing contract with payload examples, see [RESEARCHER_API.md](RESEARCHER_API.md).
 
 ## Multi-turn and trial resets
 

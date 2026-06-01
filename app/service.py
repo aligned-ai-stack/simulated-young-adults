@@ -10,6 +10,7 @@ from app.persona import PersonaSampler
 from app.prompting import build_system_prompt, history_to_messages
 from app.schemas import (
     CreateSessionRequest,
+    PersonaListRequest,
     PersonaPoolRequest,
     SessionDemographicsRequest,
     SingleTurnRequest,
@@ -100,6 +101,37 @@ class SimulationService:
             "persona": persona,
             "demographics": {},
             "seed": seed,
+        }
+
+    def generate_personas(self, request: PersonaListRequest) -> dict:
+        setup = None
+        criteria = request.criteria
+        causal_policy = None
+        if request.experiment_setup_id:
+            setup = get_experiment_setup(request.experiment_setup_id)
+            criteria = merge_setup_criteria(setup.default_criteria, request.criteria)
+            if request.include_causal_policy:
+                causal_policy = setup.causal_policy
+
+        personas = []
+        for _ in range(request.count):
+            sample = self.sampler.sample(
+                criteria=criteria,
+                conditioned_attributes=request.conditioned_attributes,
+            )
+            persona = {"persona_id": sample.persona_id, **sample.attributes}
+            if request.compact:
+                persona = self._compact_persona(persona, setup)
+            personas.append(persona)
+
+        return {
+            "synthetic": True,
+            "experiment_setup_id": request.experiment_setup_id,
+            "count": len(personas),
+            "criteria": criteria,
+            "conditioned_attributes": request.conditioned_attributes,
+            "causal_policy": causal_policy,
+            "personas": personas,
         }
 
     def ensure_persona_pool(
@@ -260,11 +292,16 @@ class SimulationService:
             visible_turns=turns,
             request=request,
         )
+        prompt_trial_context = {
+            key: value
+            for key, value in trial_context.items()
+            if key not in {"trial_id"}
+        }
         system_prompt = build_system_prompt(
             study=session["study"],
             persona=persona,
             response_mode=request.response_mode,
-            trial_context=trial_context,
+            trial_context=prompt_trial_context,
         )
         response = self.provider.complete(
             system_prompt=system_prompt,
@@ -309,12 +346,9 @@ class SimulationService:
             "session_id": session_id,
             "turn_id": turn_id,
             "experiment_setup_id": session["experiment_setup_id"],
-            "persona_pool_id": session["persona_pool_id"],
-            "persona_pool_member_id": session["persona_pool_member_id"],
             "trial_id": request.trial_id,
             "reset_policy": request.reset_policy,
             "qualitative_thinking": response.qualitative_thinking,
-            "persona": persona,
             "response": response.response,
         }
 
@@ -353,6 +387,24 @@ class SimulationService:
             raise KeyError(session_id)
         return self.store.list_trace_events(session_id)
 
+    def export_session(self, session_id: str) -> dict:
+        session = self.store.get_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+
+        experiment_setup = None
+        if session.get("experiment_setup_id"):
+            experiment_setup = get_experiment_setup(session["experiment_setup_id"]).to_public_dict()
+
+        return {
+            "session": session,
+            "experiment_setup": experiment_setup,
+            "persona": session["persona"],
+            "demographics": session["demographics"],
+            "turns": self.store.list_turns(session_id),
+            "traces": self.store.list_trace_events(session_id),
+        }
+
     def record_session_demographics(
         self,
         session_id: str,
@@ -385,6 +437,27 @@ class SimulationService:
 
     def _pool_member_seed(self, pool_seed: int, index: int) -> int:
         return (pool_seed + (index + 1) * 2654435761) % (2**63)
+
+    def _compact_persona(self, persona: dict, setup) -> dict:
+        keys = [
+            "persona_id",
+            "age",
+            "gender",
+            "sex",
+            "race",
+            "ethnicity",
+            "country",
+            "state",
+            "education",
+            "student_status",
+        ]
+        if setup is not None:
+            keys.extend(setup.confounds_to_sample)
+        return {
+            key: persona[key]
+            for key in dict.fromkeys(keys)
+            if key in persona
+        }
 
     def _build_trial_context(
         self,

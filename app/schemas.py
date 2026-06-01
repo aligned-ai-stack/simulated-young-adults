@@ -20,15 +20,32 @@ class CreateSessionRequest(BaseModel):
     persona_pool_size: int = Field(default=100, ge=1, le=10000)
 
 
+class PersonaListRequest(BaseModel):
+    study: StudySpec
+    experiment_setup_id: str | None = None
+    count: int = Field(default=1, ge=1, le=500)
+    criteria: dict[str, Any] = Field(default_factory=dict)
+    conditioned_attributes: dict[str, Any] = Field(default_factory=dict)
+    include_causal_policy: bool = True
+    compact: bool = False
+
+
+class PersonaListResponse(BaseModel):
+    synthetic: bool = True
+    experiment_setup_id: str | None = None
+    count: int
+    criteria: dict[str, Any]
+    conditioned_attributes: dict[str, Any]
+    causal_policy: dict[str, Any] | None = None
+    personas: list[dict[str, Any]]
+
+
 class SessionResponse(BaseModel):
     session_id: str
     synthetic: bool = True
     experiment_setup_id: str | None = None
-    persona_pool_id: str | None = None
-    persona_pool_member_id: str | None = None
     persona: dict[str, Any]
     demographics: dict[str, Any] = Field(default_factory=dict)
-    seed: int
 
 
 class TurnRequest(BaseModel):
@@ -47,17 +64,14 @@ class TurnResponse(BaseModel):
     turn_id: int
     synthetic: bool = True
     experiment_setup_id: str | None = None
-    persona_pool_id: str | None = None
-    persona_pool_member_id: str | None = None
     trial_id: str | None = None
     reset_policy: Literal["carryover", "trial", "full"]
     qualitative_thinking: str | None = None
-    persona: dict[str, Any]
     response: str
 
 
 class SingleTurnResponse(TurnResponse):
-    seed: int
+    pass
 
 
 class SingleTurnRequest(CreateSessionRequest):
@@ -92,6 +106,7 @@ class ExperimentSetupResponse(BaseModel):
     independent_variables: list[str]
     dependent_variables: list[str]
     confounds_to_sample: list[str]
+    causal_policy: dict[str, Any] = Field(default_factory=dict)
 
 
 class PersonaPoolRequest(BaseModel):
@@ -138,3 +153,12 @@ class TraceEventResponse(BaseModel):
     created_at: str
     event_type: str
     event: dict[str, Any]
+
+
+class SessionExportResponse(BaseModel):
+    session: dict[str, Any]
+    experiment_setup: dict[str, Any] | None = None
+    persona: dict[str, Any]
+    demographics: dict[str, Any]
+    turns: list[StoredTurnResponse]
+    traces: list[TraceEventResponse]
