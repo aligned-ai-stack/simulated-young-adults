@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -19,7 +20,7 @@ def build_system_prompt(
     )
     trial_context = trial_context or {}
     trial_lines = "\n".join(
-        f"- {key}: {value}" for key, value in sorted(trial_context.items())
+        f"- {key}: {_format_prompt_value(value)}" for key, value in sorted(trial_context.items())
     )
 
     return f"""You generate synthetic young-adult participant responses for research simulation.
@@ -47,6 +48,12 @@ Behavioral guidance:
 - Do not optimize to please the researcher; answer naturally from the persona's perspective.
 - Keep the answer at the length and format implied by the researcher prompt.
 """
+
+
+def _format_prompt_value(value: Any) -> str:
+    if isinstance(value, dict | list):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
 
 
 def history_to_messages(turns: list[dict[str, str]]) -> list[dict[str, str]]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import uuid
 
@@ -266,11 +267,13 @@ class SimulationService:
                 seed=reset_seed,
                 persona_pool_member_id=persona_pool_member_id,
             )
+            self.store.update_session_state(session_id=session_id, session_state={})
             session = {
                 **session,
                 "persona": persona,
                 "seed": reset_seed,
                 "persona_pool_member_id": persona_pool_member_id,
+                "session_state": {},
             }
 
         if request.reset_policy == "carryover":
@@ -285,6 +288,8 @@ class SimulationService:
             all_prior_turns=all_prior_turns,
             visible_turns=turns,
             request=request,
+            session_state=session.get("session_state", {}),
+            experiment_setup_id=session.get("experiment_setup_id"),
         )
         prompt_trial_context = {
             key: value
@@ -322,6 +327,19 @@ class SimulationService:
             trial_context=trial_context,
             provider_trace=response.provider_trace,
         )
+        updated_session_state = self._update_session_state(
+            current_state=session.get("session_state", {}),
+            session=session,
+            request=request,
+            response_text=response.response,
+            qualitative_thinking=response.qualitative_thinking,
+            turn_id=turn_id,
+        )
+        if updated_session_state != session.get("session_state", {}):
+            self.store.update_session_state(
+                session_id=session_id,
+                session_state=updated_session_state,
+            )
         self.store.add_trace_event(
             session_id=session_id,
             turn_id=turn_id,
@@ -329,6 +347,7 @@ class SimulationService:
             event={
                 "request": request.model_dump(),
                 "trial_context": trial_context,
+                "session_state": updated_session_state,
                 "visible_history_turns": len(turns),
                 "persona": persona,
                 "qualitative_thinking": response.qualitative_thinking,
@@ -459,7 +478,9 @@ class SimulationService:
         all_prior_turns: list[dict],
         visible_turns: list[dict],
         request: TurnRequest,
-    ) -> dict[str, str | int | None]:
+        session_state: dict | None = None,
+        experiment_setup_id: str | None = None,
+    ) -> dict:
         completed_trial_ids = {
             turn["trial_id"]
             for turn in all_prior_turns
@@ -478,7 +499,7 @@ class SimulationService:
             "full": "fresh participant reset; no previous session content is visible",
         }[request.reset_policy]
 
-        return {
+        context = {
             "trial_id": request.trial_id,
             "trial_index": request.trial_index,
             "reset_policy": request.reset_policy,
@@ -488,3 +509,177 @@ class SimulationService:
             "completed_trials_seen_by_system": len(completed_trial_ids),
             "estimated_fatigue": fatigue,
         }
+        if (
+            session_state
+            and request.reset_policy != "full"
+            and experiment_setup_id != "image_text_ai_generated_intervention"
+        ):
+            context["session_state_summary"] = session_state
+        return context
+
+    def _update_session_state(
+        self,
+        *,
+        current_state: dict,
+        session: dict,
+        request: TurnRequest,
+        response_text: str,
+        qualitative_thinking: str | None,
+        turn_id: int,
+    ) -> dict:
+        experiment_setup_id = session.get("experiment_setup_id")
+        if experiment_setup_id == "image_text_ai_generated_intervention":
+            return current_state
+
+        state = json.loads(json.dumps(current_state or {}))
+        if not state:
+            state = {
+                "persona_summary": self._state_persona_summary(session["persona"]),
+                "pre_survey": {},
+                "post_survey": {},
+                "task_summary": {
+                    "completed_trials": 0,
+                    "phase_counts": {},
+                    "truth_response_counts": {},
+                    "uncertain_trials": 0,
+                    "confidence_values": [],
+                    "trustworthiness_values": [],
+                    "perceived_source_ai_values": [],
+                    "sharing_likelihood_values": [],
+                    "conversation_exchanges": 0,
+                    "behavioral_notes": [],
+                },
+            }
+
+        phase = str(request.metadata.get("phase") or request.response_mode or "turn")
+        parsed = self._parse_response_json(response_text)
+        response_payload = parsed if isinstance(parsed, dict) else {"raw_response": response_text}
+
+        if "pre" in phase and "survey" in phase or phase == "pre_interaction":
+            state["pre_survey"].update(response_payload)
+        elif "post" in phase and "survey" in phase or phase == "post_interaction":
+            state["post_survey"].update(response_payload)
+        else:
+            self._update_task_summary(
+                state["task_summary"],
+                phase=phase,
+                request=request,
+                response_payload=response_payload,
+                qualitative_thinking=qualitative_thinking,
+                turn_id=turn_id,
+            )
+
+        state["fatigue"] = self._state_fatigue(state["task_summary"].get("completed_trials", 0))
+        return self._trim_session_state(state)
+
+    def _state_persona_summary(self, persona: dict) -> dict:
+        keys = [
+            "age",
+            "gender",
+            "education",
+            "student_status",
+            "ai_literacy",
+            "ai_literacy_level",
+            "ai_trust",
+            "baseline_trust_in_ai",
+            "ai_skepticism",
+            "online_content_skepticism",
+            "general_confidence",
+            "attention_to_detail",
+            "attention_level",
+            "reasoning_style",
+            "survey_style",
+            "openness_to_new_information",
+            "openness_to_change",
+            "topic_familiarity",
+            "initial_climate_lifestyle_view",
+            "initial_opinion_strength",
+            "initial_opinion_confidence",
+            "resilience_under_distraction",
+            "cognitive_capacity",
+            "working_memory",
+        ]
+        return {key: persona[key] for key in keys if key in persona}
+
+    def _update_task_summary(
+        self,
+        summary: dict,
+        *,
+        phase: str,
+        request: TurnRequest,
+        response_payload: dict,
+        qualitative_thinking: str | None,
+        turn_id: int,
+    ) -> None:
+        summary["completed_trials"] = int(summary.get("completed_trials", 0)) + 1
+        phase_counts = summary.setdefault("phase_counts", {})
+        phase_counts[phase] = int(phase_counts.get(phase, 0)) + 1
+
+        if "exchange" in phase or request.response_mode in {"chat", "interview"}:
+            summary["conversation_exchanges"] = int(summary.get("conversation_exchanges", 0)) + 1
+
+        truth = response_payload.get("predicted_truthfulness") or response_payload.get("veracity")
+        if truth is not None:
+            normalized_truth = str(truth).lower()
+            counts = summary.setdefault("truth_response_counts", {})
+            counts[normalized_truth] = int(counts.get(normalized_truth, 0)) + 1
+            if normalized_truth in {"unsure", "idk", "not sure"}:
+                summary["uncertain_trials"] = int(summary.get("uncertain_trials", 0)) + 1
+
+        for field, bucket in [
+            ("confidence_1_to_7", "confidence_values"),
+            ("trustworthiness_1_to_7", "trustworthiness_values"),
+            ("perceived_source_1_human_to_7_ai", "perceived_source_ai_values"),
+            ("sharing_likelihood_1_to_7", "sharing_likelihood_values"),
+        ]:
+            value = response_payload.get(field)
+            if isinstance(value, int) and not isinstance(value, bool):
+                summary.setdefault(bucket, []).append(value)
+
+        notes = summary.setdefault("behavioral_notes", [])
+        note = response_payload.get("one_sentence_reason") or qualitative_thinking
+        if isinstance(note, str) and note.strip():
+            notes.append({"turn_id": turn_id, "phase": phase, "note": note.strip()[:240]})
+            del notes[:-5]
+
+        summary["average_confidence"] = self._average(summary.get("confidence_values", []))
+        summary["average_trustworthiness"] = self._average(summary.get("trustworthiness_values", []))
+        summary["average_perceived_source_ai"] = self._average(summary.get("perceived_source_ai_values", []))
+        summary["average_sharing_likelihood"] = self._average(summary.get("sharing_likelihood_values", []))
+
+    def _trim_session_state(self, state: dict) -> dict:
+        task_summary = state.get("task_summary", {})
+        for key in [
+            "confidence_values",
+            "trustworthiness_values",
+            "perceived_source_ai_values",
+            "sharing_likelihood_values",
+        ]:
+            values = task_summary.get(key)
+            if isinstance(values, list) and len(values) > 25:
+                task_summary[key] = values[-25:]
+        return state
+
+    def _parse_response_json(self, response_text: str):
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            return None
+
+    def _average(self, values: list) -> float | None:
+        numeric = [
+            value for value in values
+            if isinstance(value, int | float) and not isinstance(value, bool)
+        ]
+        if not numeric:
+            return None
+        return round(sum(numeric) / len(numeric), 2)
+
+    def _state_fatigue(self, completed_trials: int) -> dict:
+        if completed_trials >= 20:
+            level = "high"
+        elif completed_trials >= 8:
+            level = "medium"
+        else:
+            level = "low"
+        return {"completed_task_turns": completed_trials, "level": level}

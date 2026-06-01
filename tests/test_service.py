@@ -13,8 +13,9 @@ from app.storage import SimulationStore
 
 
 class RecordingProvider:
-    def __init__(self) -> None:
+    def __init__(self, responses: list[str] | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.responses = responses or []
 
     def complete(
         self,
@@ -34,8 +35,9 @@ class RecordingProvider:
                 "capture_thinking": capture_thinking,
             }
         )
+        response = self.responses.pop(0) if self.responses else f"history={len(history)}"
         return ModelResult(
-            response=f"history={len(history)}",
+            response=response,
             qualitative_thinking="I compared the statement to what I know and chose a rating.",
             provider_trace={"provider": "test", "history_message_count": len(history)},
         )
@@ -393,6 +395,91 @@ class ServiceResetTests(unittest.TestCase):
         self.assertEqual(export["persona"]["persona_id"], session["persona"]["persona_id"])
         self.assertEqual(len(export["turns"]), 1)
         self.assertGreaterEqual(len(export["traces"]), 3)
+
+    def test_session_state_contextualizes_pre_task_and_post_turns(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        provider = RecordingProvider(
+            responses=[
+                '{"ai_trust_1_to_7": 3, "online_information_skepticism_1_to_7": 6}',
+                '{"predicted_truthfulness": "true", "confidence_1_to_7": 6, "trustworthiness_1_to_7": 5, "one_sentence_reason": "It matches what I know."}',
+                '{"perceived_task_difficulty_1_to_7": 3, "perceived_accuracy_1_to_7": 6}',
+            ]
+        )
+        service = SimulationService(
+            settings=Settings(provider="mock", database_path=Path(temp_dir.name) / "db.sqlite3"),
+            store=SimulationStore(Path(temp_dir.name) / "db.sqlite3"),
+            provider=provider,  # type: ignore[arg-type]
+        )
+        session = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(name="Truth source study"),
+                experiment_setup_id="truth_source_unlabeled",
+                persona_pool_size=2,
+                random_seed=42,
+            )
+        )
+
+        service.respond(
+            session["session_id"],
+            TurnRequest(
+                message="Pre survey",
+                metadata={"phase": "pre_survey"},
+                trial_id="pre_survey",
+                response_mode="survey",
+            ),
+        )
+        service.respond(
+            session["session_id"],
+            TurnRequest(
+                message="Statement task",
+                metadata={"phase": "statement_task"},
+                trial_id="S001",
+                response_mode="experiment",
+            ),
+        )
+        service.respond(
+            session["session_id"],
+            TurnRequest(
+                message="Post survey",
+                metadata={"phase": "post_survey"},
+                trial_id="post_survey",
+                response_mode="survey",
+            ),
+        )
+
+        stored = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored)
+        state = stored["session_state"]
+        self.assertEqual(state["pre_survey"]["ai_trust_1_to_7"], 3)
+        self.assertEqual(state["task_summary"]["completed_trials"], 1)
+        self.assertEqual(state["task_summary"]["average_confidence"], 6)
+        self.assertEqual(state["post_survey"]["perceived_accuracy_1_to_7"], 6)
+        self.assertIn("session_state_summary", provider.calls[-1]["system_prompt"])
+
+    def test_image_text_setup_does_not_accumulate_session_state(self) -> None:
+        service, _ = self.build_service()
+        session = service.create_session(
+            CreateSessionRequest(
+                study=StudySpec(name="Manual image text study"),
+                experiment_setup_id="image_text_ai_generated_intervention",
+                persona_pool_size=2,
+                random_seed=52,
+            )
+        )
+
+        service.respond(
+            session["session_id"],
+            TurnRequest(
+                message="Manual task turn",
+                metadata={"phase": "statement_task"},
+                response_mode="experiment",
+            ),
+        )
+
+        stored = service.store.get_session(session["session_id"])
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["session_state"], {})
 
 
 if __name__ == "__main__":

@@ -203,11 +203,26 @@ Create a session:
 }
 ```
 
+Send pre-survey questions as direct participant-facing items:
+
+```json
+{
+  "message": "Please answer the following pre-study questions. Return JSON only.\n\nQuestions:\n1. ai_familiarity_1_to_7: How familiar are you with AI-generated text? 1 = not at all familiar, 7 = extremely familiar.\n2. ai_trust_1_to_7: In general, how much do you trust AI systems to provide accurate information? 1 = do not trust at all, 7 = trust completely.\n3. online_information_skepticism_1_to_7: How skeptical are you of factual claims you see online? 1 = not skeptical at all, 7 = extremely skeptical.\n4. self_rated_fact_checking_frequency_1_to_7: How often do you fact-check information before believing or sharing it? 1 = never, 7 = always.\n5. baseline_confidence_in_truth_judgments_1_to_7: How confident are you in your ability to judge whether short factual statements are true or false? 1 = not confident at all, 7 = extremely confident.",
+  "stimulus": {"questionnaire_id": "truth_source_pre_survey"},
+  "metadata": {"phase": "pre_survey"},
+  "trial_id": "pre_survey",
+  "trial_index": 0,
+  "reset_policy": "carryover",
+  "response_mode": "survey",
+  "capture_thinking": true
+}
+```
+
 Send each statement:
 
 ```json
 {
-  "message": "Statement: Regular physical activity can reduce the risk of cardiovascular disease. Return JSON only with predicted_truthfulness, confidence_1_to_7, perceived_source_1_human_to_7_ai, trustworthiness_1_to_7.",
+  "message": "Please evaluate this statement.\n\nStatement: Regular physical activity can reduce the risk of cardiovascular disease.\nNo source label is shown.\n\nReturn JSON only with answers to these exact questions:\n1. predicted_truthfulness: Is the statement true or false? Use true, false, or unsure.\n2. confidence_1_to_7: How confident are you in that judgment? 1 = not at all confident, 7 = extremely confident.\n3. perceived_source_1_human_to_7_ai: Who do you think probably created this statement? 1 = definitely human, 7 = definitely AI.\n4. trustworthiness_1_to_7: How trustworthy does this statement seem? 1 = not trustworthy at all, 7 = extremely trustworthy.\n5. one_sentence_reason: Briefly explain the main reason for your judgment in one sentence.",
   "stimulus": {
     "statement_id": "S001",
     "statement_text": "Regular physical activity can reduce the risk of cardiovascular disease.",
@@ -220,6 +235,21 @@ Send each statement:
   "trial_index": 1,
   "reset_policy": "carryover",
   "response_mode": "experiment",
+  "capture_thinking": true
+}
+```
+
+Send post-survey questions after all statements:
+
+```json
+{
+  "message": "Please answer the following post-study questions based on the statement-judgment task you just completed. Return JSON only.\n\nQuestions:\n1. perceived_task_difficulty_1_to_7: Overall, how difficult was it to judge the statements? 1 = very easy, 7 = very difficult.\n2. perceived_accuracy_1_to_7: How accurate do you think your judgments were? 1 = not accurate at all, 7 = extremely accurate.\n3. confidence_change_minus3_to_3: Compared with the start of the task, how did your confidence change? -3 = much less confident, 0 = no change, 3 = much more confident.\n4. relied_on_source_label_1_to_7: How much did source information, if shown, affect your judgments? 1 = not at all, 7 = a great deal.\n5. open_ended_strategy: In one sentence, what was your main strategy for judging the statements?",
+  "stimulus": {"questionnaire_id": "truth_source_post_survey"},
+  "metadata": {"phase": "post_survey"},
+  "trial_id": "post_survey",
+  "trial_index": 999,
+  "reset_policy": "carryover",
+  "response_mode": "survey",
   "capture_thinking": true
 }
 ```
@@ -244,7 +274,7 @@ Send each statement with the source label in the participant-facing message:
 
 ```json
 {
-  "message": "Statement: Regular physical activity can reduce the risk of cardiovascular disease. Source label: human-created. Return JSON only with predicted_truthfulness, confidence_1_to_7, trustworthiness_1_to_7.",
+  "message": "Please evaluate this statement.\n\nStatement: Regular physical activity can reduce the risk of cardiovascular disease.\nSource label shown to you: human-created.\n\nReturn JSON only with answers to these exact questions:\n1. predicted_truthfulness: Is the statement true or false? Use true, false, or unsure.\n2. confidence_1_to_7: How confident are you in that judgment? 1 = not at all confident, 7 = extremely confident.\n3. trustworthiness_1_to_7: How trustworthy does this statement seem? 1 = not trustworthy at all, 7 = extremely trustworthy.\n4. one_sentence_reason: Briefly explain the main reason for your judgment in one sentence.",
   "stimulus": {
     "statement_id": "S001",
     "statement_text": "Regular physical activity can reduce the risk of cardiovascular disease.",
