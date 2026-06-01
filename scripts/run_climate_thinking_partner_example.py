@@ -129,7 +129,7 @@ def main() -> None:
             opening_payload = {
                 "message": OPENING_MESSAGE,
                 "stimulus": {"topic_id": "climate_lifestyle_changes"},
-                "metadata": {"phase": "opening", "condition_stored_not_shown": setup_id},
+                "metadata": {"phase": "opening", "condition": setup_id},
                 "trial_id": "opening_position",
                 "trial_index": 1,
                 "reset_policy": "carryover",
@@ -147,7 +147,7 @@ def main() -> None:
                     "metadata": {
                         "phase": "exchange",
                         "exchange_number": exchange_number,
-                        "condition_stored_not_shown": setup_id,
+                        "condition": setup_id,
                     },
                     "trial_id": f"exchange_{exchange_number}",
                     "trial_index": exchange_number + 1,

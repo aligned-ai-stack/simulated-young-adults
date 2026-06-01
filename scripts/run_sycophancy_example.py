@@ -75,7 +75,7 @@ def main() -> None:
             pre_payload = {
                 "message": PRE_SURVEY_MESSAGE,
                 "stimulus": {"topic_id": "AI_EDU"},
-                "metadata": {"phase": "pre_interaction", "condition_stored_not_shown": setup_id},
+                "metadata": {"phase": "pre_interaction", "condition": setup_id},
                 "trial_id": "pre",
                 "trial_index": 0,
                 "reset_policy": "carryover",
@@ -109,7 +109,7 @@ def main() -> None:
                 "metadata": {
                     "phase": "interaction",
                     "exchange_number": 1,
-                    "condition_stored_not_shown": setup_id,
+                    "condition": setup_id,
                 },
                 "trial_id": "exchange_1",
                 "trial_index": 1,
@@ -124,7 +124,7 @@ def main() -> None:
             post_payload = {
                 "message": POST_SURVEY_MESSAGE,
                 "stimulus": {"topic_id": "AI_EDU"},
-                "metadata": {"phase": "post_interaction", "condition_stored_not_shown": setup_id},
+                "metadata": {"phase": "post_interaction", "condition": setup_id},
                 "trial_id": "post",
                 "trial_index": 2,
                 "reset_policy": "carryover",

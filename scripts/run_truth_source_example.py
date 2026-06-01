@@ -133,7 +133,7 @@ def main() -> None:
                     "metadata": {
                         "example_script": "run_truth_source_example.py",
                         "phase": "statement_task",
-                        "condition_hidden_from_message": not labeled,
+                        "source_label_condition": "labeled" if labeled else "unlabeled",
                     },
                     "trial_id": statement["statement_id"],
                     "trial_index": trial_index,
