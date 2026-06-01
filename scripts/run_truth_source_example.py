@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from api_examples_common import (
+    check_health,
     get_json,
     parse_args,
     post_json,
@@ -52,6 +53,7 @@ Questions:
 
 def main() -> None:
     args = parse_args("Run truth/source labeled and unlabeled API examples.")
+    check_health(args.base_url)
     for setup_id in ["truth_source_unlabeled", "truth_source_labeled"]:
         for persona_index in range(1, args.personas + 1):
             session_payload = {

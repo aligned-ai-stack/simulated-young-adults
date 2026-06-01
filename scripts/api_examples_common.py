@@ -25,6 +25,19 @@ def post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, An
     return _send(request)
 
 
+def check_health(base_url: str) -> None:
+    request = urllib.request.Request(f"{base_url}/health", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            health = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not reach the simulation API at {base_url}. "
+            "Check that FastAPI is running and that --base-url points to the right port."
+        ) from exc
+    print_section("API HEALTH", health)
+
+
 def get_json(base_url: str, path: str) -> dict[str, Any] | list[Any]:
     request = urllib.request.Request(f"{base_url}{path}", method="GET")
     return _send(request)
