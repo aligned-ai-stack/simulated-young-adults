@@ -1,6 +1,12 @@
-# AI Simulation Backend
+# Simulated participants for study development
 
-Backend for synthetic young-adult research participants. Researchers call the API with a study task and optional inclusion criteria; the service samples a persona, maintains multi-turn state when needed, and returns clearly marked synthetic responses.
+A FastAPI service for running single-turn and multi-turn study tasks with synthetic young-adult personas. It supports eligibility criteria, reusable sessions, trial resets, local model providers, and stored response traces.
+
+The intended role is to exercise study workflows and inspect how configured models respond under specified persona and history conditions. Generated responses reflect the model, prompts, and sampling assumptions. They are not observations from human participants or evidence that the simulated population represents young adults.
+
+Part of [Aligned AI Stack](https://github.com/aligned-ai-stack). This repository currently has restricted access.
+
+The default mock provider is for development. Ollama and vLLM providers produce model-generated responses. See [RESEARCHER_API.md](RESEARCHER_API.md) for the request and response contract.
 
 ## Run locally
 
@@ -327,7 +333,7 @@ Sequential studies can represent Prolific-style behavior with `reset_policy` on 
 | `trial` | Same participant starts or continues an isolated trial. Use this when trial content should not leak across trials. | Same persona | Prior turns with the same `trial_id` only |
 | `full` | Fresh synthetic participant reset inside the same study stream. Use this for between-subject replacement or explicit full reset. | New sampled persona using the original criteria | No prior turns |
 
-The prompt also receives lightweight crowdsourcing context: prior session turn count, completed trial count, visible prior turns, and estimated fatigue. This lets the model express realistic learning, attention drift, or satisficing only when the reset policy makes that plausible.
+The prompt also receives lightweight crowdsourcing context: prior session turn count, completed trial count, visible prior turns, and estimated fatigue. These prompts ask the model to represent learning, attention drift, or satisficing under the chosen reset policy. Whether those responses resemble human behavior requires empirical validation.
 
 ## Research-validity defaults
 
