@@ -1,376 +1,94 @@
 # Simulated participants for study development
 
-A FastAPI service for running single-turn and multi-turn study tasks with synthetic young-adult personas. It supports eligibility criteria, reusable sessions, trial resets, local model providers, and stored response traces.
+A FastAPI service for testing surveys and conversational studies with synthetic young-adult personas. It generates baseline attributes from study-specific causal graphs, keeps session and trial history, and records model responses in SQLite.
 
-The intended role is to exercise study workflows and inspect how configured models respond under specified persona and history conditions. Generated responses reflect the model, prompts, and sampling assumptions. They are not observations from human participants or evidence that the simulated population represents young adults.
+Built with Python, FastAPI, Pydantic, and SQLite. Model responses come from self-hosted Ollama or vLLM; a deterministic mock provider supports development. Part of [Aligned AI Stack](https://github.com/aligned-ai-stack).
 
-Part of [Aligned AI Stack](https://github.com/aligned-ai-stack). This repository currently has restricted access.
+## What it implements
 
-The default mock provider is for development. Ollama and vLLM providers produce model-generated responses. See [RESEARCHER_API.md](RESEARCHER_API.md) for the request and response contract.
+- **Persona generation:** hand-specified directed acyclic graphs and structural equations for baseline attributes, with seeded sampling.
+- **Eligibility and interventions:** `criteria` filter complete draws; `conditioned_attributes` set baseline values before generating their descendants. Treatments, mediators, outcomes, and designated selection nodes are rejected as persona inputs.
+- **Study sessions:** reusable persona pools and three history policies: carryover, isolated trial, and full persona reset.
+- **Response traces:** request payloads, prompts, visible history, model metadata, and optional self-report rationales stored for inspection and export.
+
+Registered studies cover source labeling, AI-content detection, cognitive load, climate discussion, and sycophancy. The researcher supplies stimuli and runs the study procedure.
 
 ## Run locally
+
+Requires Python 3.10 or newer. From the repository root, in PowerShell:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python -m pip install -r requirements.txt
+$env:SIM_PROVIDER="mock"
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-That binds the API to all network interfaces on the server, so people outside the machine can reach it at `http://SERVER_IP:8000` as long as the server firewall and cloud security rules allow that port.
+Open [API documentation](http://127.0.0.1:8000/docs). The health endpoint is `GET /health`. Mock responses exercise the application flow; they do not simulate human behavior.
 
-By default the service uses `SIM_PROVIDER=mock`, which is deterministic and useful for development tests only.
-
-For real runs, use a self-hosted local LLM backend: Ollama or vLLM. The model can run on a remote Linux server; this backend just points to that server's private URL or SSH-forwarded URL. No third-party model API is required.
+The code defaults to Ollama when `SIM_PROVIDER` is unset. To generate model responses, start Ollama separately, pull a model, and configure the API before launching it:
 
 ```powershell
-$env:SIM_PROVIDER="ollama"
-$env:OLLAMA_BASE_URL="http://YOUR_LINUX_SERVER:11434"
-$env:OLLAMA_MODEL="llama3.1"
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Or with a vLLM OpenAI-compatible server:
-
-```powershell
-$env:SIM_PROVIDER="vllm"
-$env:VLLM_BASE_URL="http://YOUR_LINUX_SERVER:8001"
-$env:VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct"
-$env:VLLM_API_KEY="EMPTY"
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-If the Linux server is reachable only through SSH, forward it locally and keep the backend URL on `127.0.0.1`:
-
-```powershell
-ssh -L 11434:127.0.0.1:11434 user@YOUR_LINUX_SERVER
+ollama pull llama3.1
 $env:SIM_PROVIDER="ollama"
 $env:OLLAMA_BASE_URL="http://127.0.0.1:11434"
+$env:OLLAMA_MODEL="llama3.1"
 ```
 
-## Expose the API Through Nginx
+For vLLM, set `SIM_PROVIDER=vllm`, `VLLM_BASE_URL`, `VLLM_MODEL`, and `VLLM_API_KEY` to match your server. `SIM_DB_PATH` changes the SQLite location. Configuration is read from environment variables; the application does not load a `.env` file.
 
-This repo includes a host-side Nginx config at `nginx/default.conf` that proxies public traffic on port `80` to the local FastAPI server on `127.0.0.1:8000`.
+## Try one response
 
-Run the API on localhost:
+With the API running, in a second PowerShell terminal:
 
 ```powershell
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+$payload = @{
+    study = @{ name = "Campus transport"; instructions = "Give a short survey answer." }
+    message = "How did you get to campus this week?"
+    criteria = @{ age = @{ min = 18; max = 25 } }
+    random_seed = 42
+} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/respond -ContentType application/json -Body $payload
 ```
 
-Copy the Nginx config into place on the server:
+Responses include `synthetic: true`, a session id, and response text. Session creation exposes the persona; turn responses omit persona and internal pool identifiers. A seed controls baseline sampling, not the reproducibility of generated model responses.
 
-```bash
-sudo cp nginx/default.conf /etc/nginx/conf.d/simulated-young-adults.conf
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
-```
+For multi-turn studies, create a session with `POST /v1/sessions`, then send prompts to `POST /v1/sessions/{session_id}/turns`.
 
-On Ubuntu, the packaged default site is usually enabled on port `80` and will return its own 404 unless you disable it. Removing `/etc/nginx/sites-enabled/default` lets this project config become the active server for `http://SERVER_IP/health`.
-
-With that setup, external users can reach:
-
-- `http://SERVER_IP/health`
-- `http://SERVER_IP/v1/experiment-setups`
-- `http://SERVER_IP/docs`
-
-If port `80` is already in use or blocked, change the `listen` port in `nginx/default.conf` and open that port in the server firewall or cloud security group.
-
-## Run Everything With Docker Compose
-
-This is the simplest option if you want Ollama, the FastAPI backend, and Nginx handled together.
-
-1. Start the stack:
-
-```bash
-docker compose up --build -d
-```
-
-2. Check status:
-
-```bash
-docker compose ps
-```
-
-3. Pull an Ollama model into the Ollama container:
-
-```bash
-docker compose exec ollama ollama pull llama3.1
-```
-
-The Ollama service requests all available NVIDIA GPUs from Docker. That requires the host to have the NVIDIA driver and the Docker NVIDIA container toolkit installed.
-
-4. Open the app:
-
-```text
-http://SERVER_IP/
-http://SERVER_IP/health
-http://SERVER_IP/v1/experiment-setups
-```
-
-The public entrypoint is Nginx on port `80`. It proxies `/health`, `/v1/*`, and the docs pages to the backend container, and the backend container talks to Ollama over the internal Docker network.
-
-Provider traces are stored on every turn. A real Ollama run stores `provider_trace.provider = "ollama"`; a real vLLM run stores `provider_trace.provider = "vllm"`.
-
-## API shape
-
-List registered experiment setups:
-
-```http
-GET /v1/experiment-setups
-```
-
-The first imported experiment setup from `Experiment setup.pdf` is registered as two setup ids:
-
-| Setup id | Source label | Questions per statement |
+| `reset_policy` | Persona | Visible history |
 | --- | --- | --- |
-| `truth_source_unlabeled` | Source is not shown | truthfulness, confidence, perceived source, trustworthiness |
-| `truth_source_labeled` | Source is shown as AI/human | truthfulness, confidence, trustworthiness |
-| `ai_agent_literacy_intervention` | Not applicable | judgement, confidence, difficulty, short reasoning |
-| `climate_thinking_partner_neutral` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
-| `climate_thinking_partner_steelman` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
-| `climate_thinking_partner_socratic` | Not applicable | pre-survey, opening position, 5 exchanges, post-survey |
-| `sycophancy_neutral` | Not applicable | pre-survey, fixed-turn interaction, post-survey, manipulation check |
-| `sycophancy_sycophantic` | Not applicable | pre-survey, fixed-turn interaction, post-survey, manipulation check |
+| `carryover` | Same persona | All earlier session turns |
+| `trial` | Same persona | Turns sharing the current `trial_id` |
+| `full` | Newly sampled persona | No previous turns |
 
-The second imported experiment setup from `Experimental Setup.pdf` is registered as:
+See [RESEARCHER_API.md](RESEARCHER_API.md) for endpoint contracts, study ids, and examples. [CAUSAL_PERSONA_PIPELINE.md](CAUSAL_PERSONA_PIPELINE.md) explains the graphs, interventions, and audit fields.
 
-```text
-ai_agent_literacy_intervention
+## Verify
+
+```powershell
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
 ```
 
-It is a within-subject repeated-measures design. Each persona completes:
+Two end-to-end tests start a real local API with a temporary SQLite database and the mock provider. They exercise persona generation, invalid-input rejection, a single response, and a multi-turn study through reset, demographics, and export. They verify application flows, not fidelity to human participants.
 
-- 10 pre-intervention text-detection stimuli
-- text-detection literacy intervention
-- 10 post-intervention text-detection stimuli
-- 10 pre-intervention image-detection stimuli
-- image-detection literacy intervention
-- 10 post-intervention image-detection stimuli
+## Code map
 
-Use the same session and `reset_policy: "carryover"` across these phases when you want the same persona to retain the intervention. Store phase details in `stimulus` or `metadata`, for example `modality: "text"` and `stage: "pre_intervention"`.
+| Path | Responsibility |
+| --- | --- |
+| `app/causal.py`, `app/persona.py` | Graph operations, structural equations, and sampling |
+| `app/experiments.py` | Study setup definitions |
+| `app/service.py` | Sessions, pools, trial state, and response orchestration |
+| `app/llm.py`, `app/prompting.py` | Providers and prompt construction |
+| `app/storage.py` | SQLite persistence and traces |
+| `app/main.py`, `app/schemas.py` | HTTP routes and request/response schemas |
+| `scripts/` | Example study clients and a database maintenance script |
 
-The third imported experiment setup from `Experimental Set-up 2.pdf` is registered as three thinking-partner condition ids:
+## Scope and deployment
 
-```text
-climate_thinking_partner_neutral
-climate_thinking_partner_steelman
-climate_thinking_partner_socratic
-```
+The graphs and distributions are hand-specified assumptions, not estimates from a representative participant dataset. Model responses are synthetic outputs, not observations of people. The service is useful for developing study workflows; using it to estimate human treatment effects requires separate empirical validation. The optional `qualitative_thinking` field is a generated self-report rationale, not access to hidden model reasoning.
 
-The discussion topic is:
+The API has no authentication layer, and stored traces contain study prompts and responses. The quick start binds to localhost. Add authentication and appropriate data controls before making a deployment accessible to others.
 
-```text
-Individual lifestyle changes are a meaningful and necessary part of addressing climate change.
-```
-
-Each condition has its own persona pool. The intended procedure is pre-study survey, participant opening position, 5 conversation exchanges with the assigned thinking partner, full transcript storage, and post-study survey. The sampled persona fields include age, AI literacy, AI trust, education, openness to new information, general confidence, reasoning style, initial climate-lifestyle view, gender, and nationality.
-
-The sycophancy setup from `sycophancy.pdf` is registered as:
-
-```text
-sycophancy_neutral
-sycophancy_sycophantic
-```
-
-Each condition has its own persona pool. The sampled confounders include baseline trust in AI, AI familiarity, AI skepticism, openness to change, topic familiarity, initial opinion strength, and initial opinion confidence. The public setup metadata includes a `causal_policy` that names which fields are safe to sample/control and which post-treatment outcomes should not be conditioned on.
-
-Each setup gets its own persona pool. The pool key is:
-
-```text
-experiment_setup_id + criteria + conditioned_attributes
-```
-
-That means `truth_source_unlabeled` and `truth_source_labeled` never share the same persona roster, and a narrower eligibility run creates/reuses a separate matched pool.
-
-Optionally pre-create a persona pool:
-
-```http
-POST /v1/experiment-setups/truth_source_unlabeled/persona-pools
-```
-
-```json
-{
-  "pool_size": 500,
-  "random_seed": 42,
-  "criteria": {
-    "age": {"min": 18, "max": 25}
-  }
-}
-```
-
-Create a reusable multi-turn session:
-
-```http
-POST /v1/sessions
-```
-
-```json
-{
-  "experiment_setup_id": "truth_source_unlabeled",
-  "persona_pool_size": 500,
-  "study": {
-    "name": "Truth and source detection: unlabeled",
-    "description": "Sequential statement judgment task.",
-    "instructions": "Return the requested ratings for each statement."
-  },
-  "criteria": {
-    "age": {"min": 18, "max": 25},
-    "country": "US",
-    "student_status": ["undergraduate", "not_student"]
-  },
-  "conditioned_attributes": {
-    "country": "US"
-  },
-  "random_seed": 1234
-}
-```
-
-Send one question at a time to the same session:
-
-```http
-POST /v1/sessions/{session_id}/turns
-```
-
-```json
-{
-  "message": "How often did you order food delivery last month?",
-  "stimulus": {
-    "statement_id": "s17",
-    "source": "ai",
-    "known_truth": false
-  },
-  "metadata": {
-    "dataset_version": "v1"
-  },
-  "trial_id": "trial_001",
-  "trial_index": 1,
-  "reset_policy": "carryover",
-  "response_mode": "survey",
-  "capture_thinking": true
-}
-```
-
-Repeat that request once per question. The same `session_id` keeps the same persona, so the researcher can collect a full interview or survey in sequence without resampling.
-
-When the conversation is finished, submit demographics through a separate endpoint:
-
-```http
-POST /v1/sessions/{session_id}/demographics
-```
-
-```json
-{
-  "demographics": {
-    "age": 24,
-    "gender": "female",
-    "country": "US",
-    "education": "bachelors_degree",
-    "student_status": "undergraduate"
-  }
-}
-```
-
-That endpoint stores the demographics separately from the turn history and returns the session id, the synthetic persona, and the saved demographics.
-
-Single-turn convenience endpoint:
-
-```http
-POST /v1/respond
-```
-
-```json
-{
-  "study": {
-    "name": "Campus transport",
-    "description": "Assess commuting habits.",
-    "instructions": "Give a concise open-ended survey answer."
-  },
-  "message": "How did you get to campus this week?",
-  "criteria": {"age": {"min": 18, "max": 29}}
-}
-```
-
-Every response includes `synthetic: true`, the sampled persona, the seed, and the session id for auditability.
-When `experiment_setup_id` is provided, responses also include `persona_pool_id` and `persona_pool_member_id`.
-
-## Trace and qualitative thinking storage
-
-Each trial stores a full analysis/debug trace in SQLite. The default is `capture_thinking: true`.
-
-The stored turn row includes:
-
-- researcher request payload
-- stimulus and metadata
-- sampled persona at that turn
-- reset policy and trial context
-- exact system prompt
-- visible history passed to the model
-- qualitative thinking trace
-- final participant response
-- provider metadata and raw provider trace
-
-Trace retrieval endpoints:
-
-```http
-GET /v1/sessions/{session_id}/turns
-GET /v1/sessions/{session_id}/traces
-GET /v1/sessions/{session_id}/export
-```
-
-The `qualitative_thinking` field is an explicit self-report rationale for coding, debugging, and later qualitative analysis. It is not hidden model chain-of-thought.
-
-For the researcher-facing contract with payload examples, see [RESEARCHER_API.md](RESEARCHER_API.md).
-
-## Multi-turn and trial resets
-
-Sequential studies can represent Prolific-style behavior with `reset_policy` on each turn:
-
-| Policy | Meaning | Persona | Visible history |
-| --- | --- | --- | --- |
-| `carryover` | Same participant continues through the study. Use this for normal within-subject trials. | Same persona | All prior session turns |
-| `trial` | Same participant starts or continues an isolated trial. Use this when trial content should not leak across trials. | Same persona | Prior turns with the same `trial_id` only |
-| `full` | Fresh synthetic participant reset inside the same study stream. Use this for between-subject replacement or explicit full reset. | New sampled persona using the original criteria | No prior turns |
-
-The prompt also receives lightweight crowdsourcing context: prior session turn count, completed trial count, visible prior turns, and estimated fatigue. These prompts ask the model to represent learning, attention drift, or satisficing under the chosen reset policy. Whether those responses resemble human behavior requires empirical validation.
-
-## Research-validity defaults
-
-- Inclusion criteria restrict eligible sampled values.
-- `conditioned_attributes` are the only forced persona fields.
-- All other persona attributes are sampled independently from marginal distributions to avoid accidental dependency structure.
-- The model prompt tells the agent not to claim to be a real human participant.
-- Conversation history is stored per session for multi-turn consistency.
-- Trial reset rules determine whether cross-trial memory and fatigue can affect a response.
-
-## Persona fields
-
-Personas include lightweight Prolific/survey-panel-style profile fields for screening, balancing, and downstream analysis. Examples include:
-
-```text
-first_name, last_name, age, sex, gender, ethnicity, race, detailed_race,
-hispanic_origin, city, state, political_views, party_identification,
-residence_at_16, family_structure_at_16, family_income_at_16,
-parents' education, marital_status, work_status, military_service_duration,
-religion, religion_at_16, born_in_us, us_citizenship_status,
-highest_degree_received, speak_other_language, total_wealth
-```
-
-Addresses are generated only as synthetic placeholders and include `(synthetic)` in the string. They are not intended to represent real people or real panel records.
-
-Researchers can condition or screen on these fields through `criteria` or `conditioned_attributes`, for example:
-
-```json
-{
-  "criteria": {
-    "age": {"min": 18, "max": 25},
-    "state": ["AR", "TX"],
-    "race": ["White", "Asian"]
-  },
-  "conditioned_attributes": {
-    "sex": "Male",
-    "highest_degree_received": "High school"
-  }
-}
-```
+`docker-compose.yml` runs Ollama, the API, and Nginx together and requests NVIDIA GPUs. It requires the NVIDIA container runtime; pull the model with `docker compose exec ollama ollama pull llama3.1`. The supplied Nginx configuration exposes the API on port 80. `nginx/default.conf` also provides a host-side proxy example.

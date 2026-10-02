@@ -5,6 +5,7 @@ import secrets
 import uuid
 
 from app.config import Settings
+from app.causal import validate_persona_request
 from app.experiments import get_experiment_setup, merge_setup_criteria, study_from_setup
 from app.llm import LLMProvider
 from app.persona import PersonaSampler
@@ -55,6 +56,7 @@ class SimulationService:
             )
             allocation = self.store.allocate_persona_from_pool(pool["persona_pool_id"])
             persona = allocation["persona"]
+            causal_trace = allocation["causal_trace"]
             seed = allocation["seed"]
             persona_pool_id = allocation["pool_id"]
             persona_pool_member_id = allocation["id"]
@@ -63,8 +65,10 @@ class SimulationService:
                 criteria=criteria,
                 conditioned_attributes=conditioned_attributes,
                 random_seed=request.random_seed,
+                experiment_setup_id=None,
             )
             persona = {"persona_id": sample.persona_id, **sample.attributes}
+            causal_trace = sample.causal_trace
             seed = sample.seed
 
         session_id = f"session_{uuid.uuid4().hex}"
@@ -77,6 +81,7 @@ class SimulationService:
             criteria=criteria,
             conditioned_attributes=conditioned_attributes,
             persona=persona,
+            causal_trace=causal_trace,
             seed=seed,
             provider=self.settings.provider,
         )
@@ -116,8 +121,18 @@ class SimulationService:
             sample = self.sampler.sample(
                 criteria=criteria,
                 conditioned_attributes=request.conditioned_attributes,
+                experiment_setup_id=request.experiment_setup_id,
             )
             persona = {"persona_id": sample.persona_id, **sample.attributes}
+            self.store.store_generated_persona(
+                persona_id=sample.persona_id,
+                experiment_setup_id=request.experiment_setup_id,
+                criteria=criteria,
+                conditioned_attributes=request.conditioned_attributes,
+                persona=persona,
+                causal_trace=sample.causal_trace,
+                seed=sample.seed,
+            )
             if request.compact:
                 persona = self._compact_persona(persona, setup)
             personas.append(persona)
@@ -138,6 +153,11 @@ class SimulationService:
         pool_size: int,
         random_seed: int | None,
     ) -> dict:
+        validate_persona_request(
+            experiment_setup_id,
+            criteria,
+            conditioned_attributes,
+        )
         existing = self.store.find_persona_pool(
             experiment_setup_id=experiment_setup_id,
             criteria=criteria,
@@ -147,6 +167,7 @@ class SimulationService:
             if existing["size"] < pool_size:
                 self._expand_persona_pool(
                     pool_id=existing["id"],
+                    experiment_setup_id=experiment_setup_id,
                     criteria=criteria,
                     conditioned_attributes=conditioned_attributes,
                     pool_seed=existing["seed"],
@@ -172,12 +193,14 @@ class SimulationService:
                 criteria=criteria,
                 conditioned_attributes=conditioned_attributes,
                 random_seed=member_seed,
+                experiment_setup_id=experiment_setup_id,
             )
             members.append(
                 {
                     "id": f"member_{uuid.uuid4().hex[:12]}",
                     "seed": member_seed,
                     "persona": {"persona_id": sample.persona_id, **sample.attributes},
+                    "causal_trace": sample.causal_trace,
                 }
             )
         self.store.create_persona_pool(
@@ -201,6 +224,7 @@ class SimulationService:
         self,
         *,
         pool_id: str,
+        experiment_setup_id: str,
         criteria: dict,
         conditioned_attributes: dict,
         pool_seed: int,
@@ -214,12 +238,14 @@ class SimulationService:
                 criteria=criteria,
                 conditioned_attributes=conditioned_attributes,
                 random_seed=member_seed,
+                experiment_setup_id=experiment_setup_id,
             )
             members.append(
                 {
                     "id": f"member_{uuid.uuid4().hex[:12]}",
                     "seed": member_seed,
                     "persona": {"persona_id": sample.persona_id, **sample.attributes},
+                    "causal_trace": sample.causal_trace,
                 }
             )
         self.store.add_persona_pool_members(pool_id=pool_id, members=members)
@@ -252,6 +278,7 @@ class SimulationService:
                 allocation = self.store.allocate_persona_from_pool(session["persona_pool_id"])
                 reset_seed = allocation["seed"]
                 persona = allocation["persona"]
+                causal_trace = allocation["causal_trace"]
                 persona_pool_member_id = allocation["id"]
             else:
                 reset_seed = self._next_reset_seed(session["seed"])
@@ -259,11 +286,14 @@ class SimulationService:
                     criteria=session["criteria"],
                     conditioned_attributes=session["conditioned_attributes"],
                     random_seed=reset_seed,
+                    experiment_setup_id=session.get("experiment_setup_id"),
                 )
                 persona = {"persona_id": sample.persona_id, **sample.attributes}
+                causal_trace = sample.causal_trace
             self.store.replace_session_persona(
                 session_id=session_id,
                 persona=persona,
+                causal_trace=causal_trace,
                 seed=reset_seed,
                 persona_pool_member_id=persona_pool_member_id,
             )
@@ -271,6 +301,7 @@ class SimulationService:
             session = {
                 **session,
                 "persona": persona,
+                "causal_trace": causal_trace,
                 "seed": reset_seed,
                 "persona_pool_member_id": persona_pool_member_id,
                 "session_state": {},
@@ -409,8 +440,13 @@ class SimulationService:
         if session.get("experiment_setup_id"):
             experiment_setup = get_experiment_setup(session["experiment_setup_id"]).to_public_dict()
 
+        public_session = {
+            key: value
+            for key, value in session.items()
+            if key != "causal_trace"
+        }
         return {
-            "session": session,
+            "session": public_session,
             "experiment_setup": experiment_setup,
             "persona": session["persona"],
             "demographics": session["demographics"],
@@ -465,7 +501,7 @@ class SimulationService:
             "student_status",
         ]
         if setup is not None:
-            keys.extend(setup.confounds_to_sample)
+            keys.extend(setup.baseline_covariates)
         return {
             key: persona[key]
             for key in dict.fromkeys(keys)
