@@ -124,6 +124,21 @@ class ApiTests(unittest.TestCase):
         self.assertIn("cognitive_load_low_load", setup_ids)
         self.assertIn("cognitive_load_high_load", setup_ids)
 
+    def test_persona_endpoint_rejects_post_treatment_conditioning(self) -> None:
+        client = self.build_client()
+        response = client.post(
+            "/v1/personas",
+            json={
+                "experiment_setup_id": "sycophancy_neutral",
+                "count": 1,
+                "study": {"name": "Collider guard"},
+                "conditioned_attributes": {"conversation_engagement": 7},
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("blocked causal nodes", response.json()["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

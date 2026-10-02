@@ -38,6 +38,7 @@ class SimulationStore:
                     criteria_json TEXT NOT NULL,
                     conditioned_json TEXT NOT NULL,
                     persona_json TEXT NOT NULL,
+                    causal_trace_json TEXT NOT NULL DEFAULT '{}',
                     demographics_json TEXT NOT NULL DEFAULT '{}',
                     session_state_json TEXT NOT NULL DEFAULT '{}',
                     seed INTEGER NOT NULL,
@@ -48,6 +49,7 @@ class SimulationStore:
             self._ensure_session_column(conn, "experiment_setup_id", "TEXT")
             self._ensure_session_column(conn, "persona_pool_id", "TEXT")
             self._ensure_session_column(conn, "persona_pool_member_id", "TEXT")
+            self._ensure_session_column(conn, "causal_trace_json", "TEXT NOT NULL DEFAULT '{}'" )
             self._ensure_session_column(conn, "demographics_json", "TEXT NOT NULL DEFAULT '{}'" )
             self._ensure_session_column(conn, "session_state_json", "TEXT NOT NULL DEFAULT '{}'" )
             conn.execute(
@@ -120,10 +122,30 @@ class SimulationStore:
                     id TEXT PRIMARY KEY,
                     pool_id TEXT NOT NULL,
                     persona_json TEXT NOT NULL,
+                    causal_trace_json TEXT NOT NULL DEFAULT '{}',
                     seed INTEGER NOT NULL,
                     assigned_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(pool_id) REFERENCES persona_pools(id)
+                )
+                """
+            )
+            self._ensure_pool_member_column(
+                conn,
+                "causal_trace_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS generated_personas (
+                    persona_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    experiment_setup_id TEXT,
+                    criteria_json TEXT NOT NULL,
+                    conditioned_json TEXT NOT NULL,
+                    persona_json TEXT NOT NULL,
+                    causal_trace_json TEXT NOT NULL,
+                    seed INTEGER NOT NULL
                 )
                 """
             )
@@ -154,6 +176,21 @@ class SimulationStore:
         if column_name not in columns:
             conn.execute(f"ALTER TABLE turns ADD COLUMN {column_name} {column_type}")
 
+    def _ensure_pool_member_column(
+        self,
+        conn: sqlite3.Connection,
+        column_name: str,
+        column_type: str,
+    ) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(persona_pool_members)").fetchall()
+        }
+        if column_name not in columns:
+            conn.execute(
+                f"ALTER TABLE persona_pool_members ADD COLUMN {column_name} {column_type}"
+            )
+
     def create_session(
         self,
         *,
@@ -165,6 +202,7 @@ class SimulationStore:
         criteria: dict[str, Any],
         conditioned_attributes: dict[str, Any],
         persona: dict[str, Any],
+        causal_trace: dict[str, Any],
         seed: int,
         provider: str,
     ) -> None:
@@ -173,10 +211,10 @@ class SimulationStore:
                 """
                 INSERT INTO sessions (
                     id, experiment_setup_id, persona_pool_id, persona_pool_member_id,
-                    study_json, criteria_json, conditioned_json, persona_json,
+                    study_json, criteria_json, conditioned_json, persona_json, causal_trace_json,
                     demographics_json, session_state_json, seed, provider
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -187,6 +225,7 @@ class SimulationStore:
                     json.dumps(criteria),
                     json.dumps(conditioned_attributes),
                     json.dumps(persona),
+                    json.dumps(causal_trace),
                     json.dumps({}),
                     json.dumps({}),
                     seed,
@@ -212,6 +251,7 @@ class SimulationStore:
             "criteria": json.loads(row["criteria_json"]),
             "conditioned_attributes": json.loads(row["conditioned_json"]),
             "persona": json.loads(row["persona_json"]),
+            "causal_trace": json.loads(row["causal_trace_json"]),
             "demographics": json.loads(row["demographics_json"]),
             "session_state": json.loads(row["session_state_json"]),
             "seed": row["seed"],
@@ -363,6 +403,7 @@ class SimulationStore:
         *,
         session_id: str,
         persona: dict[str, Any],
+        causal_trace: dict[str, Any],
         seed: int,
         persona_pool_member_id: str | None = None,
     ) -> None:
@@ -370,10 +411,16 @@ class SimulationStore:
             conn.execute(
                 """
                 UPDATE sessions
-                SET persona_json = ?, seed = ?, persona_pool_member_id = ?
+                SET persona_json = ?, causal_trace_json = ?, seed = ?, persona_pool_member_id = ?
                 WHERE id = ?
                 """,
-                (json.dumps(persona), seed, persona_pool_member_id, session_id),
+                (
+                    json.dumps(persona),
+                    json.dumps(causal_trace),
+                    seed,
+                    persona_pool_member_id,
+                    session_id,
+                ),
             )
 
     def update_session_demographics(
@@ -408,6 +455,55 @@ class SimulationStore:
                 (json.dumps(session_state, sort_keys=True), session_id),
             )
 
+    def store_generated_persona(
+        self,
+        *,
+        persona_id: str,
+        experiment_setup_id: str | None,
+        criteria: dict[str, Any],
+        conditioned_attributes: dict[str, Any],
+        persona: dict[str, Any],
+        causal_trace: dict[str, Any],
+        seed: int,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO generated_personas (
+                    persona_id, experiment_setup_id, criteria_json, conditioned_json,
+                    persona_json, causal_trace_json, seed
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    persona_id,
+                    experiment_setup_id,
+                    json.dumps(criteria, sort_keys=True),
+                    json.dumps(conditioned_attributes, sort_keys=True),
+                    json.dumps(persona, sort_keys=True),
+                    json.dumps(causal_trace, sort_keys=True),
+                    seed,
+                ),
+            )
+
+    def get_generated_persona(self, persona_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM generated_personas WHERE persona_id = ?",
+                (persona_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "persona_id": row["persona_id"],
+            "experiment_setup_id": row["experiment_setup_id"],
+            "criteria": json.loads(row["criteria_json"]),
+            "conditioned_attributes": json.loads(row["conditioned_json"]),
+            "persona": json.loads(row["persona_json"]),
+            "causal_trace": json.loads(row["causal_trace_json"]),
+            "seed": row["seed"],
+        }
+
     def create_persona_pool(
         self,
         *,
@@ -439,14 +535,17 @@ class SimulationStore:
             )
             conn.executemany(
                 """
-                INSERT INTO persona_pool_members (id, pool_id, persona_json, seed)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO persona_pool_members (
+                    id, pool_id, persona_json, causal_trace_json, seed
+                )
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         member["id"],
                         pool_id,
                         json.dumps(member["persona"], sort_keys=True),
+                        json.dumps(member["causal_trace"], sort_keys=True),
                         member["seed"],
                     )
                     for member in members
@@ -464,14 +563,17 @@ class SimulationStore:
         with self._connect() as conn:
             conn.executemany(
                 """
-                INSERT INTO persona_pool_members (id, pool_id, persona_json, seed)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO persona_pool_members (
+                    id, pool_id, persona_json, causal_trace_json, seed
+                )
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         member["id"],
                         pool_id,
                         json.dumps(member["persona"], sort_keys=True),
+                        json.dumps(member["causal_trace"], sort_keys=True),
                         member["seed"],
                     )
                     for member in members
@@ -564,6 +666,7 @@ class SimulationStore:
             "id": row["id"],
             "pool_id": row["pool_id"],
             "persona": json.loads(row["persona_json"]),
+            "causal_trace": json.loads(row["causal_trace_json"]),
             "seed": row["seed"],
             "assigned_count": row["assigned_count"],
         }

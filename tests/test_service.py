@@ -7,7 +7,13 @@ from typing import Any
 
 from app.config import Settings
 from app.llm import ModelResult
-from app.schemas import CreateSessionRequest, SessionDemographicsRequest, StudySpec, TurnRequest
+from app.schemas import (
+    CreateSessionRequest,
+    PersonaListRequest,
+    SessionDemographicsRequest,
+    StudySpec,
+    TurnRequest,
+)
 from app.service import SimulationService
 from app.storage import SimulationStore
 
@@ -395,6 +401,27 @@ class ServiceResetTests(unittest.TestCase):
         self.assertEqual(export["persona"]["persona_id"], session["persona"]["persona_id"])
         self.assertEqual(len(export["turns"]), 1)
         self.assertGreaterEqual(len(export["traces"]), 3)
+        stored = service.store.get_session(session["session_id"])
+        self.assertIn("causal_trace", stored)
+        self.assertNotIn("causal_trace", export["session"])
+
+    def test_persona_endpoint_generation_is_privately_audited(self) -> None:
+        service, _ = self.build_service()
+
+        response = service.generate_personas(
+            PersonaListRequest(
+                study=StudySpec(name="Causal persona audit"),
+                experiment_setup_id="cognitive_load_high_load",
+                count=1,
+                compact=True,
+            )
+        )
+        persona_id = response["personas"][0]["persona_id"]
+        stored = service.store.get_generated_persona(persona_id)
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["causal_trace"]["model_family"], "cognitive_load")
+        self.assertNotIn("causal_trace", response["personas"][0])
 
     def test_session_state_contextualizes_pre_task_and_post_turns(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

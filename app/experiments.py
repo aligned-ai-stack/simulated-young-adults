@@ -15,8 +15,9 @@ class ExperimentSetup:
     statement_count_per_run: int
     response_questions: list[str]
     dependent_variables: list[str]
-    confounds_to_sample: list[str]
+    baseline_covariates: list[str]
     independent_variables: list[str] = field(default_factory=list)
+    # Descriptive study notes only; app.causal is the executable source of truth.
     causal_policy: dict[str, Any] = field(default_factory=dict)
 
     def to_public_dict(self) -> dict[str, Any]:
@@ -72,7 +73,7 @@ def _climate_thinking_partner_setup(
             "epistemic_trust",
             "perceived_autonomy",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "age",
             "ai_literacy",
             "ai_trust",
@@ -155,7 +156,7 @@ def _sycophancy_setup(
             "opinion_confidence_change",
             "manipulation_check_sycophancy_score",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "age",
             "baseline_trust_in_ai",
             "ai_familiarity",
@@ -223,7 +224,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
             "statement_source",
             "source_label_visibility",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "ai_literacy",
             "ai_trust",
             "education",
@@ -289,7 +290,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
             "statement_source",
             "source_label_visibility",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "ai_literacy",
             "ai_trust",
             "education",
@@ -363,7 +364,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
             "text_improvement",
             "image_improvement",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "ai_literacy_level",
             "prior_ai_use",
             "online_content_skepticism",
@@ -427,7 +428,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
             "text_improvement",
             "image_improvement",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "ai_literacy_level",
             "prior_ai_use",
             "online_content_skepticism",
@@ -482,7 +483,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
             "confidence",
             "sharing_likelihood",
         ],
-        confounds_to_sample=[
+        baseline_covariates=[
             "age",
             "gender",
             "country",
@@ -548,7 +549,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
         ],
         independent_variables=["cognitive_load_level_no_vs_low_vs_high"],
         dependent_variables=["accuracy", "confidence", "sharing_likelihood"],
-        confounds_to_sample=[
+        baseline_covariates=[
             "age",
             "gender",
             "country",
@@ -615,7 +616,7 @@ EXPERIMENT_SETUPS: dict[str, ExperimentSetup] = {
         ],
         independent_variables=["cognitive_load_level_no_vs_low_vs_high"],
         dependent_variables=["accuracy", "confidence", "sharing_likelihood"],
-        confounds_to_sample=[
+        baseline_covariates=[
             "age",
             "gender",
             "country",
