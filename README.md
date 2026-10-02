@@ -62,16 +62,24 @@ For multi-turn studies, create a session with `POST /v1/sessions`, then send pro
 | `trial` | Same persona | Turns sharing the current `trial_id` |
 | `full` | Newly sampled persona | No previous turns |
 
-See [RESEARCHER_API.md](RESEARCHER_API.md) for endpoint contracts, study ids, and examples. [CAUSAL_PERSONA_PIPELINE.md](CAUSAL_PERSONA_PIPELINE.md) explains the graphs, interventions, and audit fields.
+The generated [API documentation](http://127.0.0.1:8000/docs) contains the full request and response schemas.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /v1/experiment-setups` | List registered studies |
+| `POST /v1/personas` | Generate a batch of personas |
+| `POST /v1/sessions` | Create a reusable study session |
+| `POST /v1/sessions/{session_id}/turns` | Submit a study prompt |
+| `POST /v1/sessions/{session_id}/demographics` | Store demographics separately |
+| `GET /v1/sessions/{session_id}/export` | Export the session, responses, and traces |
 
 ## Verify
 
 ```powershell
-python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-Two end-to-end tests start a real local API with a temporary SQLite database and the mock provider. They exercise persona generation, invalid-input rejection, a single response, and a multi-turn study through reset, demographics, and export. They verify application flows, not fidelity to human participants.
+The two end-to-end workflows run against a temporary local API and database using the mock provider. They cover persona generation, single responses, and session resets through export.
 
 ## Code map
 
