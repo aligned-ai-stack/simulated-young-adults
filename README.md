@@ -67,11 +67,11 @@ See [RESEARCHER_API.md](RESEARCHER_API.md) for endpoint contracts, study ids, an
 ## Verify
 
 ```powershell
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-Tests cover sampling, causal graph checks, blocked inputs, history resets, persona pools, API responses, and stored traces. They establish application behavior, not fidelity to human participants.
+Two end-to-end tests start a real local API with a temporary SQLite database and the mock provider. They exercise persona generation, invalid-input rejection, a single response, and a multi-turn study through reset, demographics, and export. They verify application flows, not fidelity to human participants.
 
 ## Code map
 
